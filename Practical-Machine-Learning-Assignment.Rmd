@@ -1,0 +1,93 @@
+---
+title: "Practical-Machine-Learning-Assignment"
+author: "Ian"
+date: "17 January 2016"
+output: html_document
+---
+
+A weight lifting excercise dataset, (Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.) with on-body sensing data for 6 participants, performing lifts categorised by how well/the type of mistakes made was investigated and a predictive model built.
+
+Read more: http://groupware.les.inf.puc-rio.br/har#ixzz3xpfM3Y37
+
+
+```{r loaddata, cache=TRUE}
+library(dplyr)
+pmlData<-read.csv("pml-training.csv",as.is=TRUE)
+pmlDataFilt<-filter(pmlData,new_window=="no")
+delcols=numeric()
+for (ii in 1:ncol(pmlDataFilt)) {
+  if( length(unique(pmlDataFilt[,ii]))==1) {
+    print(names(pmlDataFilt)[ii])
+    delcols=c(delcols,ii)  
+  }
+}
+pmlDataSel <- pmlData %>%
+  select(-delcols) %>%
+  select(-c(X, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp,
+            num_window)) %>%
+  mutate(classe=as.factor(classe),user_name=as.factor(user_name))
+```
+
+The original data has 160 variables from different sensors, and time-window summary data for some records inserted by the original researchers. Since the prediction task we are addressing does not include full time series data, but only single observations, we discard these summary variables by removing all fields that have only one unique value when the "new window" observations are omitted. Additionally the fields relating to observation time are removed (observation number X, raw\_timestamp\_part\_1, raw\_timestamp\_part\_2, cvtd\_timestamp and num\_window). These variables have been removed from the prediction set. This leaves 54 variables including the "classe" variable, indicating how the task was carried out, which we wish to be able to predict. The 106 fields removed are: the 96 new features described in Velloso et al. (for four devices, eight parameters for each Euler angle (3)), the five fields mentioned already, new\_window (only one value after removal of the window summary rows) and four additional derived features corresponding to average acceleration for each measurement device, not mentioned in Velloso et al.
+
+```{r trainingset}
+library(caret)
+set.seed(500)
+inBuild <- createDataPartition(pmlDataFiltSel$classe,p=0.8,list=FALSE)
+building <- pmlDataFiltSel[inBuild,]
+testing <- pmlDataFiltSel[-inBuild,]
+inTrain <- createDataPartition(building$classe,p=0.8,list=FALSE)
+training <- building[inTrain,]
+validation <- building[-inTrain,]
+
+trainingdemo<-cbind(model.matrix(~0+classe+user_name,training),
+                    select(training,-classe, -user_name))
+```
+
+
+An initial exporatory analysis was carried out to determine what variables might
+be important and whether a simple model could be used. The user_name and classe
+variables are factors, and have no natural ordering, so for exploration they are
+converted to dummy variables and covariance of the classe labels with all other variables
+calculated for a given user.
+```{r exploratory}
+cor(trainingdemo[trainingdemo$user_namepedro==1,-(6:10)])[1:5,]
+lmA<-glm(classeA~. -classeB -classeC - classeD - classeE,"binomial",trainingdemo)
+#lmB<-lm(classeB~. -classeA -classeC - classeD - classeE,trainingdemo)
+#lmC<-lm(classeC~. -classeA -classeB - classeD - classeE,trainingdemo)
+#lmD<-lm(classeD~. -classeA -classeB - classeC - classeE,trainingdemo)
+#lmE<-lm(classeD~. -classeA -classeB - classeC - classeD,trainingdemo)
+lmB<-glm(classeB~.  -classeC - classeD - classeE,"binomial",trainingdemo[,-1])
+lmC<-glm(classeC~.  -classeB - classeD - classeE,"binomial",trainingdemo[,-1])
+lmD<-glm(classeD~.  -classeB - classeC - classeE,"binomial",trainingdemo[,-1])
+lmE<-glm(classeD~.  -classeB - classeC - classeD,"binomial",trainingdemo[,-1])
+
+confusionMatrix(1*(predict(lmA,trainingdemo)>0.5),trainingdemo$classeA)
+sum(1*(predict(lmA,trainingdemo)>0.5) == trainingdemo$classeA)/nrow(trainingdemo)
+
+confusionMatrix(1*(predict(lmE,trainingdemo)>0.5),trainingdemo$classeE)
+sum(1*(predict(lmE,trainingdemo)>0.5) == trainingdemo$classeE)/nrow(trainingdemo)
+
+
+which.max(c(abs(cor(trainingdemo[trainingdemo$user_namepedro==1,-(6:10)])[1:5,6:57])))
+max(abs(cor(trainingdemo[trainingdemo$user_namepedro==1,-(6:10)])[1:5,6:57]))
+abs(cor(trainingdemo[trainingdemo$user_namepedro==1,-(6:10)])[5,8])
+abs(cor(trainingdemo[trainingdemo$user_namepedro==1,-(6:10)])[1:5,6:9])
+
+plot(training$user_name,training$yaw_belt)
+plot(training$classe,training$yaw_belt)
+plot(training[training$user_name=="adelmo",]$classe,training[training$user_name=="adelmo",]$yaw_belt)
+plot(training[training$user_name=="pedro",]$classe,training[training$user_name=="pedro",]$yaw_belt)
+
+str(training)
+```
+
+```{r trainmodels, eval=FALSE}
+set.seed()
+#ctrl<-trainControl(method="repeatedcv",repeats=5)
+ctrl<-trainControl(method="cv",number=10)
+timeRF<-system.time(modFitRF<-train(classe~.,method="rf",data=training,trControl=ctrl))
+timeGBM<-system.time(modFitGBM<-train(classe~.,method="gbm",data=training,trControl=ctrl))
+timeRFpca<-system.time(modFitRFpca<-train(classe~.,method="rf",data=training,trControl=ctrl,preProcess="pca"))
+timeGBMpca<-system.time(modFitGBMpca<-train(classe~.,method="gbm",data=training,trControl=ctrl,preProcess="pca"))
+```
