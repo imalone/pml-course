@@ -5,10 +5,14 @@ date: "17 January 2016"
 output: html_document
 ---
 
-A weight lifting excercise dataset, (Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.) with on-body sensing data for 6 participants, performing lifts categorised by how well/the type of mistakes made (performance classe) was investigated and a predictive model built. We analysed this data with the goal of being able to predict the perfomance class in 20 randomly selected test observations.
+# Summary
+A weight lifting excercise dataset, (Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.) with on-body sensing data for 6 participants, performing lifts categorised by how well/the type of mistakes made (performance classe) was investigated with the goal of predicting the performance class of 20 randomly selected observations. The unblinded data were split into training, validation and testing subsets. After exploratory analysis on the training set it was used to build a range of predictive models in an automated fashion using the Caret package. The performance of these was compared on the validation set and the best performing one selected for use in predicting the class of the blinded test observations. Its expected accuracy for this was mesured using the remaining unblinded test data.
 
 Read more: http://groupware.les.inf.puc-rio.br/har#ixzz3xpfM3Y37
 
+# Data description
+
+In the original dataset, the participants carried out repetitions of a single dumbbell arm curl task under supervision. They were either carried correctly (class A) or in a range of intentionally incorrect manners (classes B-E) under supervision. Sensors were mounted on the glove, armband, belt and dumbbell, each reporting acceleration, magnetometer and gyroscope information on three axes. The original researchers also divided the observations (at 45Hz) into time windows and calculated summary statistics for each time window. The data were retrieved from the Coursera Practical Machine Learning exercise and loaded into R.
 
 ```{r libraries}
 # Can't include in cached chunks.
@@ -19,6 +23,7 @@ library(caret, quietly=TRUE)
 
 ```{r loaddata, cache=TRUE}
 pmlData<-read.csv("pml-training.csv",as.is=TRUE)
+pmlDataTest<-read.csv("pml-testing.csv",as.is=TRUE)
 pmlDataFilt<-filter(pmlData,new_window=="no")
 delcol <- apply(pmlDataFilt,2,function(x){length(unique(x))==1})
 delcolind <- which(delcol)
@@ -31,7 +36,9 @@ pmlDataSel <- pmlData %>%
   mutate(classe=as.factor(classe),user_name=as.factor(user_name))
 ```
 
-The original data has 160 variables from different sensors, and time-window summary data for some records inserted by the original researchers. Since the prediction task we are addressing does not include full time series data, but only single observations, we discard these summary variables by removing all fields that have only one unique value when the "new window" observations are omitted. Additionally the fields relating to observation time are removed (observation number X, raw\_timestamp\_part\_1, raw\_timestamp\_part\_2, cvtd\_timestamp and num\_window). These variables have been removed from the prediction set. This leaves 54 variables including the "classe" variable, indicating how the task was carried out, which we wish to be able to predict. The 106 fields removed are: the 96 new features described in Velloso et al. (for four devices, eight parameters for each Euler angle (3)), the five fields mentioned already, new\_window (only one value after removal of the window summary rows) and four additional derived features corresponding to average acceleration for each measurement device, not mentioned in Velloso et al.
+The original data has 160 variables from different sensors, and time-window summary data for the last observation in each time window. Since the prediction task we are addressing does not include full time series data, but only single observations, we discard these summary variables by removing all fields that have only one unique value when the "new window" observations are omitted. Additionally the fields relating to observation time are removed (row number X, raw\_timestamp\_part\_1, raw\_timestamp\_part\_2, cvtd\_timestamp and num\_window). These variables have been removed from the prediction set. This leaves 54 variables including the "classe" variable, indicating how the task was carried out, which we wish to be able to predict. The 106 fields removed are: the 96 new features described in Velloso et al. (for four devices, eight parameters for each Euler angle (3)), the five fields mentioned already, new\_window (whether the observation includes window summary) and four additional derived features corresponding to average acceleration for each measurement device, not mentioned in Velloso et al.
+
+# Data partitioning and exploratory analysis
 
 ```{r trainingset}
 set.seed(500)
@@ -46,14 +53,13 @@ trainingdemo<-cbind(model.matrix(~0+classe+user_name,training),
                     select(training,-classe, -user_name))
 ```
 
-The data are divided using the Caret package's createDataPartition function into a model building set (80%, n=``r nrow(building)``)) and a testing set (20% n=``r nrow(testing)``). The model building set is further divided into a training set (80% n=``r nrow(training)``) and a validation set (20% n=``r nrow(validation)``). Note terminology is that from Elements of Statistical Learning and Wikipedia, Brian Caffo's lectures use the terms 'validation' and 'testing' the other way around.)
+The data are divided using the Caret package's createDataPartition function into a model building set (80%, n=``r nrow(building)``)) and a testing set (20% n=``r nrow(testing)``). The model building set is further divided into a training set (80% n=``r nrow(training)``) and a validation set (20% n=``r nrow(validation)``). (Terminology is that from Elements of Statistical Learning and Wikipedia, in the Coursera lectures the terms 'validation' and 'testing' are used the other way around.)
 
 An initial exporatory analysis was carried out to determine what variables might
 be important and whether a simple model could be used. There is no clear variable that might be thought to indicate the performance class prior to analysis. The user_name and classe
 variables are factors, and have no natural ordering, so for exploration they are
 converted to dummy variables and covariance of the classe labels with all other variables
 calculated for a given user.
-
 
 ```{r correl1}
 # Correlation, exclude the user_names factor columns and remove the classe column
@@ -71,35 +77,36 @@ dispcolmin<-max(c(1,maxelcol-1))
 dispcolmax<-min(c(maxelcol+1,ncol(corpedro)))
 ```
 
-Picking an arbitrary user (Pedro), the highest correlation between any class and single variable was found. A sub-section of the correlation table is shown around this maximum (absolute) value of ``r round(maxelval,3)`` for ``r maxelrowname`` with ``r maxelcolname``.
+Choosing an arbitrary user (Pedro), the strongest correlation between any class and single variable was found. A sub-section of the correlation table is shown around this maximum (absolute) value of ``r round(maxelval,3)`` for ``r maxelrowname`` with ``r maxelcolname``.
 
 ```{r correl2}
 round(corpedro[,dispcolmin:dispcolmax],3)
 ```
 
-For user Pedro, yaw_belt seems to be a good indicator of class E.
+For user Pedro, yaw\_belt seems to be a good indicator of class E, plotting yaw\_belt against class:
 ```{r plotpedroyawclass}
-qplot(classe,yaw_belt,data=filter(training,user_name=="pedro"),geom="boxplot")
+qplot(classe,yaw_belt,data=filter(training,user_name=="pedro"),geom="boxplot",main="User Pedro")
 ```
 
-However across all users the separation is less clear.
+However across all users the separation is less clear, plotting yaw_\belt against class for all users:
 ```{r plotallyawclass}
-qplot(classe,yaw_belt,data=training,geom="boxplot")
+qplot(classe,yaw_belt,data=training,geom="boxplot", main="All users")
 ```
 
 This is because yaw_belt values are more different between users than across exercises for individual users.
 ```{r plotallyawuser}
-qplot(user_name,yaw_belt,data=training,geom="boxplot")
+qplot(user_name,yaw_belt,data=training,geom="boxplot", main="All classes")
 ```
 
 For a different user, Eurico, the yaw_belt variable does not distinguish class E, and is more associated with class D.
 ```{r ploteuricoyawclass}
-qplot(classe,yaw_belt,data=filter(training,user_name=="eurico"),geom="boxplot")
+qplot(classe,yaw_belt,data=filter(training,user_name=="eurico"),geom="boxplot",main="User Eurico")
 ```
 
 The distributions of yaw_belt for these two users are quite different, and not normally distributed. This suggests linear modelling will not perform well.
 ```{r plotpedroyawhist}
-qplot(yaw_belt,data=filter(training,user_name %in% c("pedro","eurico")),bins=6) +
+qplot(yaw_belt,data=filter(training,user_name %in% c("pedro","eurico")),
+                           main="Yaw_belt distributions",bins=6) +
   facet_grid(scales="free",facets=~user_name)
 ```
 
@@ -137,20 +144,50 @@ pcP <- predict(pcaP,filter(training,user_name=="pedro"))
 
 Plotting the first two principle components it can be seen again that the users' values differ more from each other than between performance class. However there is difference within each user.
 ```{r plotpcaClasse}
-qplot(PC1,PC2,data=pcAll,color=classe)
+qplot(PC1,PC2,data=pcAll,color=classe, main="Principal components, class groups")
 ```
 ```{r plotpcaUser}
-qplot(PC1,PC2,data=pcAll,color=user_name)
+qplot(PC1,PC2,data=pcAll,color=user_name, main="Principal componants, user groups")
 ```
 
+# Machine learning models.
+
+From exploratory analysis it is apparent that there is a high level of interaction between the different variables.
 
 ```{r trainmodels, eval=FALSE}
 set.seed(501)
+
 #ctrl<-trainControl(method="repeatedcv",repeats=5)
 ctrl<-trainControl(method="cv",number=10)
 ctrlBoot<-trainControl(number=10,method="boot")
+
+modFitu <- list(0)
+for (user in unique(training$user_name) ){
+  datau<-filter(training,user_name==user)
+  modFitu[[user]]<-
+    train(classe~.-user_name,method="gbm",data=filter(datau,user_name==user),trControl=ctrl)
+}
+# Experimental:
+predictU <- function(modlist,data) {
+#  apply(data,1,function(x){predict(modlist[[x['user_name']]],x)})
+preds <- character(nrow(data))
+for (user in unique(data$user_name)) {
+  #preds[[paste0("user_name",user)]] <- predict(modlist[[user]],data)
+  usersel <- data$user_name==user
+  preds[usersel] <- as.character(predict(modlist[[user]],data[usersel,]))
+}
+#preds<-as.data.frame(preds,stringsAsFactors =FALSE)
+#selectmat <- model.matrix(~user_name-1,data)
+
+#preds <- preds[selectmat[,colnames(preds)]>0]
+#preds<-as.factor(preds)
+#levels(preds)<-levels(user_list)
+preds
+}
+
 modknn<-train(classe~.,method="knn",data=training,trControl=ctrlBoot)
-timeGBMb<-system.time(modFitGBM<-train(classe~.,method="gbm",data=training,trControl=ctrlBoot,verbose=FALSE))
+timeGBMb<-system.time(modFitGBMb<-train(classe~.,method="gbm",data=training,trControl=ctrlBoot,verbose=FALSE))
+
 
 
 timeRF<-system.time(modFitRF<-train(classe~.,method="rf",data=training,trControl=ctrl))
