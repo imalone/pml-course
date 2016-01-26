@@ -14,7 +14,7 @@ A weight lifting excercise dataset, [Velloso et al.][Velloso] with on-body sensi
 
 In the original dataset, the participants carried out repetitions of a single dumbbell arm curl task under supervision. They were either carried correctly (class A) or in a range of intentionally incorrect manners (classes B-E) under supervision. Sensors were mounted on the glove, armband, belt and dumbbell, each reporting acceleration, magnetometer and gyroscope information on three axes. The original researchers also divided the observations (at 45Hz) into time windows and calculated summary statistics for each time window. The data were retrieved from the Coursera Practical Machine Learning exercise and loaded into R.
 
-```{r libraries}
+```{r libraries, warning=FALSE, results='hide'}
 # Can't include in cached chunks.
 library(dplyr, quietly=TRUE, warn.conflicts = FALSE)
 library(caret, quietly=TRUE)
@@ -93,7 +93,7 @@ dispcolmax<-min(c(maxelcol+1,ncol(corpedro)))
 Choosing an arbitrary user (Pedro), the strongest correlation between any class and single variable was found. A sub-section of the correlation table is shown around this maximum (absolute) value of ``r round(maxelval,3)`` for ``r maxelrowname`` with ``r maxelcolname``.
 
 ```{r correl2}
-round(corpedro[,dispcolmin:dispcolmax],3)
+kable(corpedro[,dispcolmin:dispcolmax],digits=3)
 ```
 
 For user Pedro, yaw\_belt seems to be a good indicator of class E, plotting yaw\_belt against class:
@@ -141,7 +141,7 @@ lmBcoefsSig <- cbind(Estimate=lmBcoefs[,"Estimate"],
 
 The overall accuracy of this model is ``r round(cmBAcc,3)``, which seems relatively high, however the confusion matrix shows this is due to correctly predicting the large number of observations which are not class B. The accuracy for predicting class B observations is only about a third.
 ```{r linearmodelconftable}
-cmB$table
+kable(cmB$table)
 ```
 
 After Bonferroni correction a total of ``r lmBpvalcount5pc`` variables show significant correlation with class B at a 5% level after Bonferroni correction, and ``r lmBpvalcount1M`` at a one-per-million level. As it appears difficult to find a meaningful explanation for classes from simple investigation of the data we attempt a principle component analysis.
@@ -188,19 +188,20 @@ registerDoMC(cores = 3)
 ctrl<-trainControl(method="cv",number=10)
 ```
 
-```{r trainmodels-plain, eval=TRUE, cache=TRUE}
+```{r trainmodels-plain, eval=TRUE, cache=TRUE, results='hide'}
 set.seed(501)
 modFitRF<-train(classe~.,method="rf",data=training,trControl=ctrl)
 set.seed(501)
 modFitGBM<-train(classe~.,method="gbm",data=training,trControl=ctrl)
 ```
-```{r trainmodels-pca, eval=TRUE, cache=TRUE}
+```{r trainmodels-pca, eval=TRUE, cache=TRUE, results='hide'}
 set.seed(501)
 modFitRFpca<-train(classe~.,method="rf",data=training,trControl=ctrl,preProcess="pca")
 set.seed(501)
 modFitGBMpca<-train(classe~.,method="gbm",data=training,trControl=ctrl,preProcess="pca")
 ```
-```{r trainmodels-user, eval=TRUE, cache=TRUE}
+```{r trainmodels-user, eval=TRUE, cache=TRUE, results='hide', warning=FALSE}
+# Warnings suppressed as some values do not vary for some users
 set.seed(501)
 modFitGBMU <- list()
 for (user in unique(training$user_name) ){
@@ -217,7 +218,7 @@ for (user in unique(training$user_name) ){
     train(classe~.-user_name,method="rf",data=filter(datau,user_name==user),trControl=ctrl)
 }
 ```
-```{r trainmodels-ts, eval=TRUE, cache=TRUE}
+```{r trainmodels-ts, eval=TRUE, cache=TRUE, results='hide'}
 set.seed(501)
 modFitTS <- train(classe~raw_timestamp_part_1, method="rpart", data=trainingFull, trControl=ctrl)
 ```
@@ -273,7 +274,8 @@ kable(accuracyVboth, digits=4)
 ```
 
 The best performing model in the validation set and cross validation is the GBM-user model. Cross validation and outside validation results are similar, especially for the higher performing models. (The single variable raw timestamp model is very close, but using it seems against the spirit of the assignment.) Before applying it to the test set we re-train on the full building set.
-```{r trainmodels-final, eval=TRUE, cache=TRUE}
+```{r trainmodels-final, eval=TRUE, cache=TRUE, results='hide', warning=FALSE}
+# Warnings suppressed as some values do not vary for some users
 set.seed(501)
 modFitGBMUFinal <- list()
 for (user in unique(training$user_name) ){
@@ -286,7 +288,7 @@ testAcc <- confusionMatrix(testing$classe,testPredict)$overall["Accuracy"]
 cvAccfinal <- getAccCV(modFitGBMUFinal)
 ```
 
-The final expected out-of-sample error is ``r round(testAcc,4)`` from estimation on the test sample, ``r round(cvAccfinal)`` from cross-validation during fitting. (There is the potential for upward bias in the cross-validation result, as this method was selected on the basis of its higher cross validation accuracy on largely the same data.)
+The final expected out-of-sample error is ``r round(testAcc,5)`` from estimation on the test sample, ``r round(cvAccfinal)`` from cross-validation during fitting. (There is the potential for upward bias in the cross-validation result, as this method was selected on the basis of its higher cross validation accuracy on largely the same data.)
 
 ```{r predict-blinded}
 finalPredict <- predictU(modFitGBMUFinal,pmlDataTest)
