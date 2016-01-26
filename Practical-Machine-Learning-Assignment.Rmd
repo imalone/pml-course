@@ -1,14 +1,14 @@
 ---
-title: "Practical-Machine-Learning-Assignment"
+title: "Predicting quality of exercise action"
 author: "Ian"
 date: "17 January 2016"
 output: html_document
 ---
 
 # Summary
-A weight lifting excercise dataset, (Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.) with on-body sensing data for 6 participants, performing lifts categorised by how well/the type of mistakes made (performance classe) was investigated with the goal of predicting the performance class of 20 randomly selected observations. The unblinded data were split into training, validation and testing subsets. After exploratory analysis on the training set it was used to build a range of predictive models in an automated fashion using the Caret package. The performance of these was compared on the validation set and the best performing one selected for use in predicting the class of the blinded test observations. Its expected accuracy for this was mesured using the remaining unblinded test data.
+A weight lifting excercise dataset, [Velloso et al.][Velloso] with on-body sensing data for 6 participants, performing lifts categorised by how well/the type of mistakes made (performance classe) was investigated with the goal of predicting the performance class of 20 randomly selected observations. The unblinded data were split into training, validation and testing subsets. After exploratory analysis on the training set it was used to build a range of predictive models in an automated fashion using the Caret package. The performance of these was compared on the validation set and the best performing one selected for use in predicting the class of the blinded test observations. Its expected accuracy for this was mesured using the remaining unblinded test data.
 
-Read more: http://groupware.les.inf.puc-rio.br/har#ixzz3xpfM3Y37
+[Velloso]: http://groupware.les.inf.puc-rio.br/har#ixzz3xpfM3Y37 "(Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.)"
 
 # Data description
 
@@ -16,8 +16,10 @@ In the original dataset, the participants carried out repetitions of a single du
 
 ```{r libraries}
 # Can't include in cached chunks.
-library(dplyr, quietly=TRUE)
+library(dplyr, quietly=TRUE, warn.conflicts = FALSE)
 library(caret, quietly=TRUE)
+library(knitr, quietly=TRUE)
+library(doMC)
 ```
 
 
@@ -29,11 +31,16 @@ delcol <- apply(pmlDataFilt,2,function(x){length(unique(x))==1})
 delcolind <- which(delcol)
 delcolnames <- names(pmlData)[delcol]
 
-pmlDataSel <- pmlData %>%
+pmlData <- pmlData %>%
   select(-delcolind) %>%
-  select(-c(X, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp,
-            num_window)) %>%
   mutate(classe=as.factor(classe),user_name=as.factor(user_name))
+
+pmlDataTest <- pmlDataTest %>%
+  mutate(user_name=as.factor(user_name))
+
+pmlDataSel <- pmlData %>%
+  select(-c(X, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp,
+            num_window))
 ```
 
 The original data has 160 variables from different sensors, and time-window summary data for the last observation in each time window. Since the prediction task we are addressing does not include full time series data, but only single observations, we discard these summary variables by removing all fields that have only one unique value when the "new window" observations are omitted. Additionally the fields relating to observation time are removed (row number X, raw\_timestamp\_part\_1, raw\_timestamp\_part\_2, cvtd\_timestamp and num\_window). These variables have been removed from the prediction set. This leaves 54 variables including the "classe" variable, indicating how the task was carried out, which we wish to be able to predict. The 106 fields removed are: the 96 new features described in Velloso et al. (for four devices, eight parameters for each Euler angle (3)), the five fields mentioned already, new\_window (whether the observation includes window summary) and four additional derived features corresponding to average acceleration for each measurement device, not mentioned in Velloso et al.
@@ -48,6 +55,12 @@ testing <- pmlDataSel[-inBuild,]
 inTrain <- createDataPartition(building$classe,p=0.8,list=FALSE)
 training <- building[inTrain,]
 validation <- building[-inTrain,]
+
+# Datasets with all fields (except row number)
+buildingFull <- pmlData[inBuild,]
+testingFull <- pmlData[-inBuild,]
+trainingFull <- buildingFull[inTrain,]
+validationFull <- buildingFull[-inTrain,]
 
 trainingdemo<-cbind(model.matrix(~0+classe+user_name,training),
                     select(training,-classe, -user_name))
@@ -116,19 +129,29 @@ lmB<-lm(classeB~.  -classeC - classeD - classeE,trainingdemo[,-1])
 cmB <- confusionMatrix(1*(predict(lmB,trainingdemo)>0.5),trainingdemo$classeB)
 cmBAcc <- cmB$overall[["Accuracy"]]
 
-lmBpvals <- summary(lmB)$coefficients[,"Pr(>|t|)"]
+lmBcoefs <-summary(lmB)$coefficients
+lmBpvals <- lmBcoefs[,"Pr(>|t|)"]
 lmBpvalsAdj <- p.adjust(lmBpvals,method="bonferroni")
 lmBpvalcount5pc <- sum(lmBpvalsAdj < 5e-2)
 lmBpvalcount1M <- sum(lmBpvalsAdj < 1e-6)
 
+lmBcoefsSig <- cbind(Estimate=lmBcoefs[,"Estimate"],
+                     "Adjusted p"=lmBpvalsAdj)[lmBpvalsAdj<5e-2,]
 ```
 
 The overall accuracy of this model is ``r round(cmBAcc,3)``, which seems relatively high, however the confusion matrix shows this is due to correctly predicting the large number of observations which are not class B. The accuracy for predicting class B observations is only about a third.
-```{r linearmodeltable}
+```{r linearmodelconftable}
 cmB$table
 ```
 
 After Bonferroni correction a total of ``r lmBpvalcount5pc`` variables show significant correlation with class B at a 5% level after Bonferroni correction, and ``r lmBpvalcount1M`` at a one-per-million level. As it appears difficult to find a meaningful explanation for classes from simple investigation of the data we attempt a principle component analysis.
+
+The first ten elements of the linear model that are significant at 5% corrected, the largest coefficents are for users.
+```{r linearmodelcoeftable}
+library(pander)
+pander(head(signif(lmBcoefsSig,3),10))
+```
+
 
 ```{r pca}
 pcaAll <- select(training,-classe,-user_name) %>%
@@ -152,46 +175,121 @@ qplot(PC1,PC2,data=pcAll,color=user_name, main="Principal componants, user group
 
 # Machine learning models.
 
-From exploratory analysis it is apparent that there is a high level of interaction between the different variables.
+From exploratory analysis it is apparent that there is a high level of interaction between the different variables. We try seven methods of model fitting on the training dataset. These are:
+* Random Forest (rf) and Stochastic Gradient Boosting (gbm) as a boosted random trees method.
+* RF and GBM are also tested with principal components preprocessing.
+* Using RF and GBM, two models based on fitting a separate model to the data subsetted for each user (based on observation of the strong clustering of variables by user). To predict from this model, the previously fitted model for that user is selected and applied to the observation.
+* Using a simple partitioning tree (rpart) on a previously discarded field, raw\_timestamp\_part\_1, which is not censored in the test data. Mainly to demonstrate annoyance that the entire assignment could be done in about five lines.
 
-```{r trainmodels, eval=FALSE}
-set.seed(501)
+The same seed is set before each fitting procedure. All fitting is performed using a 10-fold cross-validation, which allows out of sample errors to be estimated. Due to the large sample size bootstrapping is not computationally efficient.
 
-#ctrl<-trainControl(method="repeatedcv",repeats=5)
+```{r trainmodels-set}
+registerDoMC(cores = 3)
 ctrl<-trainControl(method="cv",number=10)
-ctrlBoot<-trainControl(number=10,method="boot")
+```
 
-modFitu <- list(0)
+```{r trainmodels-plain, eval=TRUE, cache=TRUE}
+set.seed(501)
+modFitRF<-train(classe~.,method="rf",data=training,trControl=ctrl)
+set.seed(501)
+modFitGBM<-train(classe~.,method="gbm",data=training,trControl=ctrl)
+```
+```{r trainmodels-pca, eval=TRUE, cache=TRUE}
+set.seed(501)
+modFitRFpca<-train(classe~.,method="rf",data=training,trControl=ctrl,preProcess="pca")
+set.seed(501)
+modFitGBMpca<-train(classe~.,method="gbm",data=training,trControl=ctrl,preProcess="pca")
+```
+```{r trainmodels-user, eval=TRUE, cache=TRUE}
+set.seed(501)
+modFitGBMU <- list()
 for (user in unique(training$user_name) ){
   datau<-filter(training,user_name==user)
-  modFitu[[user]]<-
+  modFitGBMU[[user]]<-
     train(classe~.-user_name,method="gbm",data=filter(datau,user_name==user),trControl=ctrl)
 }
-# Experimental:
+
+set.seed(501)
+modFitRFU <- list()
+for (user in unique(training$user_name) ){
+  datau<-filter(training,user_name==user)
+  modFitRFU[[user]]<-
+    train(classe~.-user_name,method="rf",data=filter(datau,user_name==user),trControl=ctrl)
+}
+```
+```{r trainmodels-ts, eval=TRUE, cache=TRUE}
+set.seed(501)
+modFitTS <- train(classe~raw_timestamp_part_1, method="rpart", data=trainingFull, trControl=ctrl)
+```
+```{r trainmodels-acc, eval=TRUE, cache=TRUE}
+# Prediction function to use for the model lists.
 predictU <- function(modlist,data) {
-#  apply(data,1,function(x){predict(modlist[[x['user_name']]],x)})
-preds <- character(nrow(data))
-for (user in unique(data$user_name)) {
-  #preds[[paste0("user_name",user)]] <- predict(modlist[[user]],data)
-  usersel <- data$user_name==user
-  preds[usersel] <- as.character(predict(modlist[[user]],data[usersel,]))
-}
-#preds<-as.data.frame(preds,stringsAsFactors =FALSE)
-#selectmat <- model.matrix(~user_name-1,data)
-
-#preds <- preds[selectmat[,colnames(preds)]>0]
-#preds<-as.factor(preds)
-#levels(preds)<-levels(user_list)
-preds
+  pred <- character(nrow(data))
+  for (user in unique(data$user_name)) {
+    usersel <- data$user_name==user
+    pred[usersel] <- as.character(predict(modlist[[user]],data[usersel,]))
+    }
+  pred
 }
 
-modknn<-train(classe~.,method="knn",data=training,trControl=ctrlBoot)
-timeGBMb<-system.time(modFitGBMb<-train(classe~.,method="gbm",data=training,trControl=ctrlBoot,verbose=FALSE))
+#mean(modFitRF$resample$Accuracy)
+#getTrainPerf(modFitRF)
+
+getAccCV <- function(x) {
+  if ("train" %in% class(x)) {
+    getTrainPerf(x)[1,1]
+  } else {
+    mean(sapply(x,function(Umod){getTrainPerf(Umod)[1,1]}))
+  }
+}
+
+evalAccV <- function(x) {
+  if ("train" %in% class(x)) {
+    # Use validationFull so all models can find needed variables
+    pred <- predict(x,validationFull)
+  } else {
+    pred <- predictU(x,validationFull)
+  }
+  confusionMatrix(validationFull$classe,pred)$overall["Accuracy"]
+}
+
+accuracyCV <- sapply(list(RF=modFitRF, GBM=modFitGBM, "RF-PCA"=modFitRFpca,
+                          "GBM-PCA"=modFitGBMpca, "RF-user"=modFitRFU,
+                          "GBM-user"=modFitGBMU, "timestamp"=modFitTS),
+                     getAccCV)
 
 
+accuracyV <- sapply(list(RF=modFitRF, GBM=modFitGBM, "RF-PCA"=modFitRFpca,
+                         "GBM-PCA"=modFitGBMpca, "RF-user"=modFitRFU,
+                         "GBM-user"=modFitGBMU, "timestamp"=modFitTS),
+                    evalAccV)
+names(accuracyV)<-sub("\\.Accuracy","",names(accuracyV))
+accuracyVboth <- rbind(Validation=accuracyV,"Cross validation"=accuracyCV)
+```
 
-timeRF<-system.time(modFitRF<-train(classe~.,method="rf",data=training,trControl=ctrl))
-timeGBM<-system.time(modFitGBM<-train(classe~.,method="gbm",data=training,trControl=ctrl))
-timeRFpca<-system.time(modFitRFpca<-train(classe~.,method="rf",data=training,trControl=ctrl,preProcess="pca"))
-timeGBMpca<-system.time(modFitGBMpca<-train(classe~.,method="gbm",data=training,trControl=ctrl,preProcess="pca"))
+The out of sample errors are compared on the validation dataset.
+```{r evalmodels}
+kable(accuracyVboth, digits=4)
+```
+
+The best performing model in the validation set and cross validation is the GBM-user model. Cross validation and outside validation results are similar, especially for the higher performing models. (The single variable raw timestamp model is very close, but using it seems against the spirit of the assignment.) Before applying it to the test set we re-train on the full building set.
+```{r trainmodels-final, eval=TRUE, cache=TRUE}
+set.seed(501)
+modFitGBMUFinal <- list()
+for (user in unique(training$user_name) ){
+  datau<-filter(building,user_name==user)
+  modFitGBMUFinal[[user]]<-
+    train(classe~.-user_name,method="gbm",data=filter(datau,user_name==user),trControl=ctrl)
+}
+testPredict <- predictU(modFitGBMUFinal,testing)
+testAcc <- confusionMatrix(testing$classe,testPredict)$overall["Accuracy"]
+cvAccfinal <- getAccCV(modFitGBMUFinal)
+```
+
+The final expected out-of-sample error is ``r round(testAcc,4)`` from estimation on the test sample, ``r round(cvAccfinal)`` from cross-validation during fitting. (There is the potential for upward bias in the cross-validation result, as this method was selected on the basis of its higher cross validation accuracy on largely the same data.)
+
+```{r predict-blinded}
+finalPredict <- predictU(modFitGBMUFinal,pmlDataTest)
+finalPredict <- data.frame(X=pmlDataTest$X,classe=finalPredict)
+write.csv(finalPredict,"predictions.csv")
 ```
