@@ -6,15 +6,15 @@ output: html_document
 ---
 
 # Summary
-A weight lifting exercise dataset, [Velloso et al.][Velloso] with on-body sensing data for 6 participants, performing lifts categorised by how well/the type of mistakes made (performance classe) was investigated with the goal of predicting the performance class of 20 randomly selected observations. The un-blinded data were split into training, validation and testing subsets.
+A weight lifting exercise dataset, by [Velloso et al.][Velloso] was studied. This contained  on-body sensing data for 6 participants, performing a lifting task categorised by how well/the type of mistakes made (performance classe). Our goal was to predict the performance class of 20 randomly selected and blinded observations.
 
-After exploratory analysis on the training set it was used to build a range of predictive models in an automated fashion using the Caret package. The performance of these was compared on the validation set and the best performing one (per-user Stochastic Gradient Boosting) selected for use in predicting the class of the blinded test observations. Its expected accuracy for this was measured using the remaining un-blinded test data (0.9954), and 10-fold cross validation on the building set (0.9940).
+The un-blinded data were split into training, validation and testing subsets. After exploratory analysis on the training set it was used to build a range of predictive models in an automated fashion using the Caret package. The performance of these was compared on the validation set and the best performing one (per-user Stochastic Gradient Boosting) selected for use in predicting the class of the blinded test observations. Its expected accuracy for this was assessed using 10-fold cross validation on the building set (0.9940) and prediction accuracy on the remaining hold-out test data (0.9954), 
 
 [Velloso]: http://groupware.les.inf.puc-rio.br/har#ixzz3xpfM3Y37 "(Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.)"
 
 # Data description
 
-In the original dataset, the participants carried out repetitions of a single dumbbell arm curl task under supervision. They were either carried correctly (class A) or in a range of intentionally incorrect manners (classes B-E) under supervision. Sensors were mounted on the glove, armband, belt and dumbbell, each reporting acceleration, magnetometer and gyroscope information on three axes. The original researchers also divided the observations (at 45Hz) into time windows and calculated summary statistics for each time window. The data were retrieved from the Coursera Practical Machine Learning exercise and loaded into R.
+In the original dataset, the participants carried out repetitions of a single dumbbell arm curl task under supervision. They were either carried out correctly (class A) or in a range of intentionally incorrect manners (classes B-E) under supervision. Sensors were mounted on the glove, armband, belt and dumbbell, each reporting acceleration, magnetometer and gyroscope information on three axes. The original researchers also divided the observations (at 45Hz) into time windows and calculated summary statistics for each time window. The data were retrieved from the Coursera Practical Machine Learning exercise and loaded into R.
 
 ```{r libraries, warning=FALSE, results='hide', echo=FALSE}
 # Can't include in cached chunks.
@@ -50,7 +50,9 @@ pmlDataSel <- pmlData %>%
             num_window))
 ```
 
-The original data has 160 variables from different sensors, and time-window summary data for the last observation in each time window. Since the prediction task we are addressing does not include full time series data, but only single observations, we discard these summary variables by removing all fields that have only one unique value when the "new window" observations are omitted. Additionally the fields relating to observation time are removed (row number X, raw\_timestamp\_part\_1, raw\_timestamp\_part\_2, cvtd\_timestamp and num\_window). These variables have been removed from the prediction set. This leaves 54 variables including the "classe" variable, indicating how the task was carried out, which we wish to be able to predict. The 106 fields removed are: the 96 new features described in Velloso et al. (for four devices, eight parameters for each Euler angle (3)), the five fields mentioned already, new\_window (whether the observation includes window summary) and four additional derived features corresponding to average acceleration for each measurement device, not mentioned in Velloso et al.
+The original data has 160 variables from different sensors, and time-window summary data for the last observation in each time window. Since the prediction task we are addressing does not include full time series data, but only single observations, we discarded these summary variables by removing all fields that have only one unique value when the "new window" observations are omitted. Additionally the fields relating to observation time were removed (row number X, raw\_timestamp\_part\_1, raw\_timestamp\_part\_2, cvtd\_timestamp and num\_window). These variables had already been removed from the set to be predicted.
+
+This left 54 variables including the "classe" variable, indicating how the task was carried out, which we wish to be able to predict. The 106 fields removed are: the 96 new features described in Velloso et al. (for four devices, eight parameters for each Euler angle (3)), the five fields mentioned already, new\_window (whether the observation includes window summary) and four additional derived features corresponding to average acceleration for each measurement device, not mentioned in Velloso et al.
 
 # Data partitioning and exploratory analysis
 
@@ -73,13 +75,12 @@ trainingdemo<-cbind(model.matrix(~0+classe+user_name,training),
                     select(training,-classe, -user_name))
 ```
 
-The data are divided using the Caret package's createDataPartition function into a model building set (80%, n=``r nrow(building)``)) and a testing set (20% n=``r nrow(testing)``). The model building set is further divided into a training set (80% n=``r nrow(training)``) and a validation set (20% n=``r nrow(validation)``). (Terminology is that from Elements of Statistical Learning and Wikipedia, in the Coursera lectures the terms 'validation' and 'testing' are used the other way around.)
+The data were divided using the Caret package's createDataPartition function into a model building set (80%, n=``r nrow(building)``)) and a testing set (20% n=``r nrow(testing)``). The model building set is further divided into a training set (80% n=``r nrow(training)``) and a validation set (20% n=``r nrow(validation)``). (Terminology is that from Elements of Statistical Learning and Wikipedia, in the Coursera lectures the terms 'validation' and 'testing' are used the other way around.)
 
 An initial exploratory analysis was carried out to determine what variables might
 be important and whether a simple model could be used. There is no clear variable that might be thought to indicate the performance class prior to analysis. The user_name and classe
-variables are factors, and have no natural ordering, so for exploration they are
-converted to dummy variables and covariance of the classe labels with all other variables
-calculated for a given user.
+variables are factors, and have no natural ordering, so for exploration they were
+converted to dummy variables. Correlation of the classe labels was calculated for a given user (Pedro) with all other variables.
 
 ```{r correl1}
 # Correlation, exclude the user_names factor columns and remove the classe column
@@ -97,13 +98,14 @@ dispcolmin<-max(c(1,maxelcol-1))
 dispcolmax<-min(c(maxelcol+1,ncol(corpedro)))
 ```
 
-Choosing an arbitrary user (Pedro), the strongest correlation between any class and single variable was found. A sub-section of the correlation table is shown around this maximum (absolute) value of ``r round(maxelval,3)`` for ``r maxelrowname`` with ``r maxelcolname``.
+For this arbitrary user, the strongest correlation between any class and single variable was found. A sub-section of the correlation table is shown around this maximum (absolute) value of ``r round(maxelval,3)`` for ``r maxelrowname`` with ``r maxelcolname``.
 
 ```{r correl2}
 kable(corpedro[,dispcolmin:dispcolmax],digits=3)
 ```
 
-For user Pedro, yaw\_belt seems to be a good indicator of class E, plotting yaw\_belt against class. However across all users the separation is less clear.
+Plotting yaw\_belt against class for user Pedro, yaw\_belt seems to be a good indicator of class E. However across all users the separation is less clear.
+
 ```{r plotpedroyawclass}
 plotYawPedro <- qplot(classe,yaw_belt,
                    data=filter(training,user_name=="pedro"),geom="boxplot",main="User Pedro")
@@ -122,6 +124,7 @@ qplot(user_name,yaw_belt,data=training,geom="boxplot", main="All classes")
 Figure 2. Belt yaw values by user.
 
 The distributions of yaw_belt for two different users are quite different, and not normally distributed. This suggests linear modelling will not perform well.
+
 ```{r plotpedroyawhist}
 qplot(yaw_belt,data=filter(training,user_name %in% c("pedro","eurico")),
                            main="Yaw_belt distributions",bins=6) +
@@ -158,7 +161,7 @@ kable(cmBTable)
 
 After Bonferroni correction a total of ``r lmBpvalcount5pc`` variables show significant correlation with class B at a 5% level after Bonferroni correction, and ``r lmBpvalcount1M`` at a one-per-million level. As it appears difficult to find a meaningful explanation for classes from simple investigation of the data we attempt a principle component analysis.
 
-The first ten elements of the linear model that are significant at 5% corrected, the largest coefficients are for users.
+The following are the first ten elements of the linear model that are significant at 5% corrected, the largest coefficients are for users.
 ```{r linearmodelcoeftable}
 pander(signif(head(lmBcoefsSig,10),3))
 ```
@@ -177,12 +180,14 @@ pcP <- predict(pcaP,filter(training,user_name=="pedro"))
 
 
 Plotting the first two principle components it can be seen again that the users' values differ more from each other than between performance class. However there is difference within each user.
-```{r plotpcaClasse}
-plotPCAclass <- qplot(PC1,PC2,data=pcAll,color=classe,
-                      main="Principal components, class groups")
 
+```{r plotpcaClasse, fig.width=10}
+pStyle <- geom_point(alpha = 0.1)
+
+plotPCAclass <- qplot(PC1,PC2,data=pcAll,color=classe,
+                      main="Principal components, class groups") + pStyle
 plotPCAuser <- qplot(PC1,PC2,data=pcAll,color=user_name,
-                     main="Principal componants, user groups")
+                     main="Principal componants, user groups") + pStyle
 grid.arrange(plotPCAclass, plotPCAuser, ncol=2)
 ```
 
@@ -191,10 +196,11 @@ Figure 4. Groups and classes divided by principal components.
 # Machine learning models.
 
 From exploratory analysis it is apparent that there is a high level of interaction between the different variables. We try seven methods of model fitting on the training dataset. These are:
+
 * Random Forest (rf) and Stochastic Gradient Boosting (gbm) as a boosted random trees method.
 * RF and GBM are also tested with principal components preprocessing.
-* Using RF and GBM, two models based on fitting a separate model to the data subsetted for each user (based on observation of the strong clustering of variables by user). To predict from this model, the previously fitted model for that user is selected and applied to the observation.
-* Using a simple partitioning tree (rpart) on a previously discarded field, raw\_timestamp\_part\_1, which is not censored in the test data. Mainly to demonstrate annoyance that the entire assignment could be done in about five lines.
+* Again with RF and GBM separately, a model based on training a separate model to the data subsetted for each user (based on observation of the strong clustering of variables by user). To predict from this model, the previously fitted model for that user is selected and applied to the observation.
+* Using a simple partitioning tree (rpart) on a previously discarded field, raw\_timestamp\_part\_1, which is not censored in the test data. Mainly out of annoyance that the entire assignment could be done in about five lines.
 
 The same seed is set before each fitting procedure. All fitting is performed using a 10-fold cross-validation, which allows out of sample errors to be estimated. Due to the large sample size bootstrapping is not computationally efficient.
 
@@ -237,7 +243,7 @@ for (user in unique(training$user_name) ){
 set.seed(501)
 modFitTS <- train(classe~raw_timestamp_part_1, method="rpart", data=trainingFull, trControl=ctrl)
 ```
-```{r trainmodels-acc, eval=TRUE, cache=TRUE}
+```{r trainmodels-accfns, eval=TRUE, results='hide', warnings=FALSE}
 # Prediction function to use for the model lists.
 predictU <- function(modlist,data) {
   pred <- character(nrow(data))
@@ -268,7 +274,8 @@ evalAccV <- function(x) {
   }
   confusionMatrix(validationFull$classe,pred)$overall["Accuracy"]
 }
-
+```
+```{r trainmodels-acc, eval=TRUE, cache=TRUE}
 accuracyCV <- sapply(list(RF=modFitRF, GBM=modFitGBM, "RF-PCA"=modFitRFpca,
                           "GBM-PCA"=modFitGBMpca, "RF-user"=modFitRFU,
                           "GBM-user"=modFitGBMU, "timestamp"=modFitTS),
@@ -283,12 +290,14 @@ names(accuracyV)<-sub("\\.Accuracy","",names(accuracyV))
 accuracyVboth <- rbind(Validation=accuracyV,"Cross validation"=accuracyCV)
 ```
 
-The out of sample errors are compared on the validation dataset.
+# Results
+
+The out of sample errors are compared using the validation dataset. The 10-fold cross-validation accuracy for each model is also shown.
 ```{r evalmodels}
 kable(accuracyVboth, digits=4)
 ```
 
-The best performing model in the validation set and cross validation is the GBM-user model. Cross validation and outside validation results are similar, especially for the higher performing models. (The single variable raw timestamp model is very close, but using it seems against the spirit of the assignment.) Before applying it to the test set we re-train on the full building set.
+The best performing model in the validation set is the GBM-user model. Cross validation and outside validation results are similar, especially for the higher performing models. (The single variable raw timestamp model is very close, but using it seems against the spirit of the assignment.) Before applying this model to the test set we re-train on the full building set (which has already been used to determine the model in any case).
 ```{r trainmodels-final, eval=TRUE, cache=TRUE, results='hide', warning=FALSE}
 # Warnings suppressed as some values do not vary for some users
 set.seed(501)
@@ -301,12 +310,24 @@ for (user in unique(training$user_name) ){
 testPredict <- predictU(modFitGBMUFinal,testing)
 testAcc <- confusionMatrix(testing$classe,testPredict)$overall["Accuracy"]
 cvAccfinal <- getAccCV(modFitGBMUFinal)
+impdf <- data.frame(nrow=nrow(varImp(modFitGBMUFinal[[1]])$importance))
+for (U in names(modFitGBMUFinal)) { impdf<-cbind(varImp(modFitGBMUFinal[[U]])$importance)}
+impmean<-apply(as.matrix(impdf),1,mean)
+impmean<-impmean[order(impmean)]
 ```
 
-The final expected out-of-sample error is ``r round(testAcc,5)`` from estimation on the test sample, ``r round(cvAccfinal,5)`` from cross-validation during fitting. (There is the potential for upward bias in the cross-validation result, as this method was selected on the basis of its higher cross validation accuracy on largely the same data.)
+The final expected out-of-sample error is ``r round(testAcc,5)`` from estimation on the test sample, ``r round(cvAccfinal,5)`` from cross-validation during fitting. This is the expected accuracy when applying to an unseen data set. (There is the potential for upward bias in the cross-validation result, as this method was selected on the basis of its higher cross validation accuracy on largely the same data.) The importance of variables in the final fit is shown below,
 
-```{r predict-blinded, results='hide'}
-finalPredict <- predictU(modFitGBMUFinal,pmlDataTest)
-finalPredict <- data.frame(X=pmlDataTest$X,classe=finalPredict)
+```{r plot-importance-final, fig.height=5}
+op <- par(mar = c(3, 10, 2, 2) + 0.1)
+barplot(tail(impmean,30),horiz=TRUE, las=1)
+par(op)
+```
+
+Figure 5. Top 30 variables in final fit. The user label is used in model selection so is not included in importance measurement.
+
+```{r predictblinded, warning=FALSE, results='hide'}
+suppressMessages(finalPredict <- predictU(modFitGBMUFinal,pmlDataTest))
+suppressMessages(finalPredict <- data.frame(X=pmlDataTest$X,classe=finalPredict))
 write.csv(finalPredict,"predictions.csv")
 ```
