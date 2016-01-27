@@ -6,7 +6,9 @@ output: html_document
 ---
 
 # Summary
-A weight lifting excercise dataset, [Velloso et al.][Velloso] with on-body sensing data for 6 participants, performing lifts categorised by how well/the type of mistakes made (performance classe) was investigated with the goal of predicting the performance class of 20 randomly selected observations. The unblinded data were split into training, validation and testing subsets. After exploratory analysis on the training set it was used to build a range of predictive models in an automated fashion using the Caret package. The performance of these was compared on the validation set and the best performing one selected for use in predicting the class of the blinded test observations. Its expected accuracy for this was mesured using the remaining unblinded test data.
+A weight lifting exercise dataset, [Velloso et al.][Velloso] with on-body sensing data for 6 participants, performing lifts categorised by how well/the type of mistakes made (performance classe) was investigated with the goal of predicting the performance class of 20 randomly selected observations. The un-blinded data were split into training, validation and testing subsets.
+
+After exploratory analysis on the training set it was used to build a range of predictive models in an automated fashion using the Caret package. The performance of these was compared on the validation set and the best performing one (per-user Stochastic Gradient Boosting) selected for use in predicting the class of the blinded test observations. Its expected accuracy for this was measured using the remaining un-blinded test data (0.9954), and 10-fold cross validation on the building set (0.9940).
 
 [Velloso]: http://groupware.les.inf.puc-rio.br/har#ixzz3xpfM3Y37 "(Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.)"
 
@@ -14,12 +16,17 @@ A weight lifting excercise dataset, [Velloso et al.][Velloso] with on-body sensi
 
 In the original dataset, the participants carried out repetitions of a single dumbbell arm curl task under supervision. They were either carried correctly (class A) or in a range of intentionally incorrect manners (classes B-E) under supervision. Sensors were mounted on the glove, armband, belt and dumbbell, each reporting acceleration, magnetometer and gyroscope information on three axes. The original researchers also divided the observations (at 45Hz) into time windows and calculated summary statistics for each time window. The data were retrieved from the Coursera Practical Machine Learning exercise and loaded into R.
 
-```{r libraries, warning=FALSE, results='hide'}
+```{r libraries, warning=FALSE, results='hide', echo=FALSE}
 # Can't include in cached chunks.
 library(dplyr, quietly=TRUE, warn.conflicts = FALSE)
+
 library(caret, quietly=TRUE)
+library(doMC, quietly=TRUE)
+
 library(knitr, quietly=TRUE)
-library(doMC)
+library(gridExtra,quietly=TRUE)
+library(pander)
+opts_chunk$set("echo"=FALSE)
 ```
 
 
@@ -68,7 +75,7 @@ trainingdemo<-cbind(model.matrix(~0+classe+user_name,training),
 
 The data are divided using the Caret package's createDataPartition function into a model building set (80%, n=``r nrow(building)``)) and a testing set (20% n=``r nrow(testing)``). The model building set is further divided into a training set (80% n=``r nrow(training)``) and a validation set (20% n=``r nrow(validation)``). (Terminology is that from Elements of Statistical Learning and Wikipedia, in the Coursera lectures the terms 'validation' and 'testing' are used the other way around.)
 
-An initial exporatory analysis was carried out to determine what variables might
+An initial exploratory analysis was carried out to determine what variables might
 be important and whether a simple model could be used. There is no clear variable that might be thought to indicate the performance class prior to analysis. The user_name and classe
 variables are factors, and have no natural ordering, so for exploration they are
 converted to dummy variables and covariance of the classe labels with all other variables
@@ -96,37 +103,42 @@ Choosing an arbitrary user (Pedro), the strongest correlation between any class 
 kable(corpedro[,dispcolmin:dispcolmax],digits=3)
 ```
 
-For user Pedro, yaw\_belt seems to be a good indicator of class E, plotting yaw\_belt against class:
+For user Pedro, yaw\_belt seems to be a good indicator of class E, plotting yaw\_belt against class. However across all users the separation is less clear.
 ```{r plotpedroyawclass}
-qplot(classe,yaw_belt,data=filter(training,user_name=="pedro"),geom="boxplot",main="User Pedro")
+plotYawPedro <- qplot(classe,yaw_belt,
+                   data=filter(training,user_name=="pedro"),geom="boxplot",main="User Pedro")
+plotYawAll <- qplot(classe,yaw_belt,
+                    data=training,geom="boxplot", main="All users")
+grid.arrange(plotYawPedro,plotYawAll,ncol=2)
 ```
 
-However across all users the separation is less clear, plotting yaw_\belt against class for all users:
-```{r plotallyawclass}
-qplot(classe,yaw_belt,data=training,geom="boxplot", main="All users")
-```
+Figure 1. Separation of classes by belt yaw.
 
 This is because yaw_belt values are more different between users than across exercises for individual users.
 ```{r plotallyawuser}
 qplot(user_name,yaw_belt,data=training,geom="boxplot", main="All classes")
 ```
 
-For a different user, Eurico, the yaw_belt variable does not distinguish class E, and is more associated with class D.
-```{r ploteuricoyawclass}
-qplot(classe,yaw_belt,data=filter(training,user_name=="eurico"),geom="boxplot",main="User Eurico")
-```
+Figure 2. Belt yaw values by user.
 
-The distributions of yaw_belt for these two users are quite different, and not normally distributed. This suggests linear modelling will not perform well.
+The distributions of yaw_belt for two different users are quite different, and not normally distributed. This suggests linear modelling will not perform well.
 ```{r plotpedroyawhist}
 qplot(yaw_belt,data=filter(training,user_name %in% c("pedro","eurico")),
                            main="Yaw_belt distributions",bins=6) +
   facet_grid(scales="free",facets=~user_name)
 ```
 
+Figure 3. Belt yaw distribution for two users.
+
 A linear model is fitted to predict class B, using class A (exercise performed correctly) as the reference class. All variables, except class labels, are used. (A binomial GLM may be more appropriate, but does not perform very differently.)
 ```{r linearmodel}
 lmB<-lm(classeB~.  -classeC - classeD - classeE,trainingdemo[,-1])
-cmB <- confusionMatrix(1*(predict(lmB,trainingdemo)>0.5),trainingdemo$classeB)
+predictB <- 1*(predict(lmB,trainingdemo)>0.5)
+cmB <- confusionMatrix(predictB,trainingdemo$classeB)
+cmBTable <- table(data.frame(PredictB=
+                               ifelse(predictB,"Predict B","Predict not B"),
+                             ReferenceB=
+                               ifelse(trainingdemo$classeB,"Ref B","Ref not B")))
 cmBAcc <- cmB$overall[["Accuracy"]]
 
 lmBcoefs <-summary(lmB)$coefficients
@@ -140,16 +152,15 @@ lmBcoefsSig <- cbind(Estimate=lmBcoefs[,"Estimate"],
 ```
 
 The overall accuracy of this model is ``r round(cmBAcc,3)``, which seems relatively high, however the confusion matrix shows this is due to correctly predicting the large number of observations which are not class B. The accuracy for predicting class B observations is only about a third.
-```{r linearmodelconftable}
-kable(cmB$table)
+```{r linearmodelconftable, results='asis'}
+kable(cmBTable)
 ```
 
 After Bonferroni correction a total of ``r lmBpvalcount5pc`` variables show significant correlation with class B at a 5% level after Bonferroni correction, and ``r lmBpvalcount1M`` at a one-per-million level. As it appears difficult to find a meaningful explanation for classes from simple investigation of the data we attempt a principle component analysis.
 
-The first ten elements of the linear model that are significant at 5% corrected, the largest coefficents are for users.
+The first ten elements of the linear model that are significant at 5% corrected, the largest coefficients are for users.
 ```{r linearmodelcoeftable}
-library(pander)
-pander(head(signif(lmBcoefsSig,3),10))
+pander(signif(head(lmBcoefsSig,10),3))
 ```
 
 
@@ -167,11 +178,15 @@ pcP <- predict(pcaP,filter(training,user_name=="pedro"))
 
 Plotting the first two principle components it can be seen again that the users' values differ more from each other than between performance class. However there is difference within each user.
 ```{r plotpcaClasse}
-qplot(PC1,PC2,data=pcAll,color=classe, main="Principal components, class groups")
+plotPCAclass <- qplot(PC1,PC2,data=pcAll,color=classe,
+                      main="Principal components, class groups")
+
+plotPCAuser <- qplot(PC1,PC2,data=pcAll,color=user_name,
+                     main="Principal componants, user groups")
+grid.arrange(plotPCAclass, plotPCAuser, ncol=2)
 ```
-```{r plotpcaUser}
-qplot(PC1,PC2,data=pcAll,color=user_name, main="Principal componants, user groups")
-```
+
+Figure 4. Groups and classes divided by principal components.
 
 # Machine learning models.
 
@@ -288,9 +303,9 @@ testAcc <- confusionMatrix(testing$classe,testPredict)$overall["Accuracy"]
 cvAccfinal <- getAccCV(modFitGBMUFinal)
 ```
 
-The final expected out-of-sample error is ``r round(testAcc,5)`` from estimation on the test sample, ``r round(cvAccfinal)`` from cross-validation during fitting. (There is the potential for upward bias in the cross-validation result, as this method was selected on the basis of its higher cross validation accuracy on largely the same data.)
+The final expected out-of-sample error is ``r round(testAcc,5)`` from estimation on the test sample, ``r round(cvAccfinal,5)`` from cross-validation during fitting. (There is the potential for upward bias in the cross-validation result, as this method was selected on the basis of its higher cross validation accuracy on largely the same data.)
 
-```{r predict-blinded}
+```{r predict-blinded, results='hide'}
 finalPredict <- predictU(modFitGBMUFinal,pmlDataTest)
 finalPredict <- data.frame(X=pmlDataTest$X,classe=finalPredict)
 write.csv(finalPredict,"predictions.csv")
