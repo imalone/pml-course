@@ -8,7 +8,7 @@ output: html_document
 # Summary
 A weight lifting exercise dataset, by [Velloso et al.][Velloso] was studied. This contained  on-body sensing data for 6 participants, performing a lifting task categorised by how well/the type of mistakes made (performance classe). Our goal was to predict the performance class of 20 randomly selected and blinded observations.
 
-The un-blinded data were split into training, validation and testing subsets. After exploratory analysis on the training set it was used to build a range of predictive models in an automated fashion using the Caret package. The performance of these was compared on the validation set and the best performing one (per-user Stochastic Gradient Boosting) selected for use in predicting the class of the blinded test observations. Its expected accuracy for this was assessed using 10-fold cross validation on the building set (0.9940) and prediction accuracy on the remaining hold-out test data (0.9954), 
+The un-blinded data were split into training, validation and testing subsets. After exploratory analysis on the training set it was used to build a range of predictive models in an automated fashion using the Caret package. The performance of these was compared on the validation set and the best performing one (per-user Stochastic Gradient Boosting) selected for use in predicting the class of the blinded test observations. Its expected accuracy for this was assessed using 10-fold cross validation on the building set (99.40% accuracy, 0.605% error) and prediction accuracy on the remaining hold-out test data (99.54% accuracy, 0.459% error).
 
 [Velloso]: http://groupware.les.inf.puc-rio.br/har#ixzz3xpfM3Y37 "(Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.)"
 
@@ -316,7 +316,7 @@ impmean<-apply(as.matrix(impdf),1,mean)
 impmean<-impmean[order(impmean)]
 ```
 
-The final expected out-of-sample error is ``r round(testAcc,5)`` from estimation on the test sample, ``r round(cvAccfinal,5)`` from cross-validation during fitting. This is the expected accuracy when applying to an unseen data set. (There is the potential for upward bias in the cross-validation result, as this method was selected on the basis of its higher cross validation accuracy on largely the same data.) The importance of variables in the final fit is shown below,
+The final expected out-of-sample accuracy is ``r round(testAcc,5)`` (OOS error ``r round(1-testAcc,5)*100``%) from estimation on the test sample, ``r round(cvAccfinal,5)`` (OOS error ``r round(1-cvAccfinal,5)*100``%) from cross-validation during fitting. This is the expected accuracy when applying to an unseen data set. (There is the potential for upward bias in the cross-validation result, as this method was selected on the basis of its higher cross validation accuracy on largely the same data.) The importance of variables in the final fit is shown below,
 
 ```{r plot-importance-final, fig.height=5}
 op <- par(mar = c(3, 10, 2, 2) + 0.1)
